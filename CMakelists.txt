@@ -76,7 +76,9 @@ find_package (Python3 3 REQUIRED)
 set( ENV{CTEST_OUTPUT_ON_FAILURE} TRUE)
 
 LIST(APPEND C-Lib-Sources
-        src/msg-tool.c
+        src/local-messenger.c
+        src/local-messenger-message-types.c
+        src/time-out-helper.c
 	)
 
 #project for the msg-queue-work-tests

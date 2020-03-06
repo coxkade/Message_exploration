@@ -6,6 +6,7 @@
  *
  */
 
+#include <local-messenger.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <setjmp.h>
@@ -46,6 +47,10 @@
 /***********************************************************************************/
 /***************************** Function Definitions ********************************/
 /***********************************************************************************/
+
+/*********************************************************************
+ *************** General Utility Functions ***************************
+ ********************************************************************/
 
 /**
  * Internal function for sleeping ns
@@ -122,6 +127,40 @@ static void just_pass(void **state)
 
 }
 
+/*********************************************************************
+ *************** Basic Test ******************************************
+ ********************************************************************/
+#define BASIC_TEST_BUFFER_SIZE 50
+#define BASIC_TEST_FINISH_VAL 0xFE
+static char basic_test_send_buffer[BASIC_TEST_BUFFER_SIZE]; //Bubber used with the basic test
+
+static void basic_test_message_callback(void *msg, long message_size)
+{
+    char set_val;
+    char *typed;
+    assert(NULL != msg);
+    assert(ARRAY_MAX_COUNT(basic_test_send_buffer) == message_size);
+    typed = msg;
+    set_val = typed[0];
+    set_val++;
+    if(set_val <= BASIC_TEST_FINISH_VAL)
+    {
+        memset(basic_test_send_buffer, set_val, ARRAY_MAX_COUNT(basic_test_send_buffer));
+        messenger_send(basic_test_send_buffer, ARRAY_MAX_COUNT(basic_test_send_buffer));
+    }
+}
+
+static void basic_test(void **state)
+{
+    static char finish_message[BASIC_TEST_BUFFER_SIZE];
+    memset(finish_message, BASIC_TEST_FINISH_VAL, ARRAY_MAX_COUNT(finish_message));
+    memset(basic_test_send_buffer, 0x00, ARRAY_MAX_COUNT(basic_test_send_buffer));
+    messenger_register_callback(basic_test_message_callback);
+    messenger_send(basic_test_send_buffer, ARRAY_MAX_COUNT(basic_test_send_buffer));
+    while(0 != memcmp(basic_test_send_buffer, finish_message, ARRAY_MAX_COUNT(finish_message))) {}
+    messenger_kill();
+}
+
 /**
  * @brief the main function
  * @return
@@ -140,7 +179,7 @@ int main(void)
     const struct CMUnitTest tests[] =
     {
         cmocka_unit_test(just_pass),
-
+        cmocka_unit_test(basic_test),
     };
     signal(SIGSEGV, segfault_catch);
 #ifndef DISABLE_TIME_OUT
