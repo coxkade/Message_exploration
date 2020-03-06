@@ -1,0 +1,116 @@
+cmake_minimum_required(VERSION 3.13)
+
+enable_testing ()
+
+#Macro that configures the cmake flags for the unit tests
+macro(set_test_cmake_flags TARG)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+	message(STATUS "Configuring for Mac")
+	target_compile_options(${TARG} PUBLIC -g -O0 -Wall -fprofile-arcs -ftest-coverage -std=c11)
+elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+	message(STATUS "Configuring for linux")
+	target_compile_options(${TARG} PUBLIC -g -O0 -Wall -fprofile-arcs -ftest-coverage -std=c11 -D_POSIX_C_SOURCE=200809L)
+else()
+    message( FATAL_ERROR "Cannot Configure for ${CMAKE_HOST_SYSTEM_NAME}")
+endif()
+
+endmacro(set_test_cmake_flags)
+
+#Macro that configures the cmake flags for the Library
+macro(set_lib_cmake_flags TARG)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    message(STATUS "Configuring for Mac")
+	target_compile_options(${TARG} PUBLIC -g -O0 -Wall -std=c11)
+elseif (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+	message(STATUS "Configuring for linux")
+	target_compile_options(${TARG} PUBLIC -g -O0 -Wall -std=c11 -D_POSIX_C_SOURCE=200809L)
+else()
+    message( FATAL_ERROR "Cannot Configure for ${CMAKE_HOST_SYSTEM_NAME}")
+endif()
+
+endmacro(set_lib_cmake_flags)
+
+
+#Macro that does some test prep
+macro( msg_queue_test_prep )
+    find_library(MOCKA_LIB cmocka)
+    find_path(MOCKA_PATH cmocka.h)
+    if(NOT MOCKA_LIB)
+    message(FATAL_ERROR "cmocka not found.  Make sure it is installed and supported by your toolchain.")
+    endif()
+    if(NOT MOCKA_PATH)
+    message(FATAL_ERROR "cmocka path not found.  Make sure it is installed and supported by your toolchain.")
+    endif()
+    message(STATUS "MOCKA_LIB: ${MOCKA_LIB}")
+    message(STATUS "MOCKA_PATH: ${MOCKA_PATH}")
+    # Threads Are Required for Posix Hal Components
+    set(THREADS_PREFER_PTHREAD_FLAG ON) 
+    find_package(Threads REQUIRED)
+    find_program(GCOV gcov)
+    if(NOT GCOV)
+        message(FATAL_ERROR "gcov not found.  Make sure it is installed and supported by your toolchain.")
+    endif()
+    
+endmacro(msg_queue_test_prep)
+
+#macro that sets up a gcov target
+macro(create_gcov_rule src)
+	message(STATUS "Setting up Coverage for ${src}")
+	get_filename_component(just_name ${src} NAME)
+	get_filename_component(barename ${src} NAME)
+	set(cov_name ${just_name}.gcov)
+	message(STATUS "Setting up Coverage for ${cov_name}")
+	
+	LIST(APPEND ALL_GCOV ${cov_name})
+	
+	add_custom_command(
+        OUTPUT ${cov_name}
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/gcov.py --gcov ${GCOV} --source ${src} --verbose
+        DEPENDS run-msg-queue-work-tests
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+endmacro(create_gcov_rule src)
+
+find_package (Python3 3 REQUIRED)
+
+set( ENV{CTEST_OUTPUT_ON_FAILURE} TRUE)
+
+LIST(APPEND C-Lib-Sources
+        src/msg-tool.c
+	)
+
+#project for the msg-queue-work-tests
+project(msg-queue-work-tests)
+	set(ENV{CMOCKA_TEST_ABORT} 1)
+	add_executable(msg-queue-work-tests-ex Main_Test.c ${C-Lib-Sources})
+	msg_queue_test_prep()
+	set_test_cmake_flags(msg-queue-work-tests-ex)
+	target_include_directories(msg-queue-work-tests-ex PRIVATE ${MOCKA_PATH} inc)
+	target_link_libraries(msg-queue-work-tests-ex ${MOCKA_LIB} ${CMAKE_THREAD_LIBS_INIT} -fprofile-arcs -ftest-coverage)
+	add_test(NAME msg-queue-work-test 
+		COMMAND msg-queue-work-tests-ex
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})		
+	
+	
+	#setup the coverage
+	add_custom_target(run-msg-queue-work-tests
+		COMMAND msg-queue-work-tests-ex
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+		DEPENDS msg-queue-work-tests-ex)
+	
+	foreach(sourcefile ${C-Lib-Sources})
+		create_gcov_rule(${sourcefile})
+	endforeach(sourcefile ${C-Lib-Sources})
+	
+	add_custom_target(msg-queue-coverage
+		DEPENDS ${ALL_GCOV}
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
+project(msg-queue)
+
+	#Source for the simply thread Library
+	add_library(msg-queue STATIC 
+   	${C-Lib-Sources})
+   	set_lib_cmake_flags(msg-queue)
+	target_include_directories(msg-queue PUBLIC inc)
+	target_include_directories(msg-queue PRIVATE src/priv-inc)
